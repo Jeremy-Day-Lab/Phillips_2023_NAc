@@ -1,31 +1,28 @@
-#Data from this analysis comes from male and female adult Sprague-Dawley rats that were treated for 7 consecutive days 
+#Data from this analysis comes from male and female adult Sprague-Dawley rats that were treated for 1 hour 
 #with 20mg/kg of cocaine. 1 hour forlloiwng final exposure, animals were sacrificed, and NAc was taken. 
 #Goal of this analysis: Generate a seurat object for this dataset. We will later use SoupX to remove transcripts found overrepresented
 #in empty droplets, and doubletfinder to remove doublets. 
 
 #Set working directory and seed
-setwd("/data/project/daylab/2019-JD-0040/")
+setwd("/data/project/daylab/2019-JD-0037")
 set.seed(1234)
 
 #Now read in the data. 
-#1 = Female Saline
-#2 = Female Cocaine
-#3 = Male Saline
-#4 = Male Cocaine
 library(Seurat)
-Fem_Sal_data  <- Read10X(data.dir = "1_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
-Fem_Coc_data  <- Read10X(data.dir = "2_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
-Male_Sal_data <- Read10X(data.dir = "3_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
-Male_Coc_data <- Read10X(data.dir = "4_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
+Fem_Sal_data  <- Read10X(data.dir = "FemSal_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
+Fem_Coc_data  <- Read10X(data.dir = "FemCoc_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
+Male_Sal_data <- Read10X(data.dir = "MaleSal_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
+Male_Coc_data <- Read10X(data.dir = "MaleCoc_output_Rn7_Ensembl/outs/filtered_feature_bc_matrix/")
+
 
 #Create the Seurat object 
 #Using arbitrary cutoffs here. THis allows us to interrogate the quality of every cell, while reserving the right to remove some at 
 #a later QC point. 
-Fem_Sal  <- CreateSeuratObject(counts = Fem_Sal_data,min.cells = 1,min.features = 1) #6375 nuclei
-Fem_Coc  <- CreateSeuratObject(counts = Fem_Coc_data,min.cells = 1,min.features = 1) #7265 nuclei
-Male_Sal <- CreateSeuratObject(counts = Male_Sal_data,min.cells = 1,min.features = 1) #6213 nuclei 
-Male_Coc <- CreateSeuratObject(counts = Male_Coc_data,min.cells = 1,min.features = 1) #6375 nuclei 
-#26182 total nuclei
+Fem_Sal  <- CreateSeuratObject(counts = Fem_Sal_data,min.cells = 1,min.features = 1) #3684 nuclei
+Fem_Coc  <- CreateSeuratObject(counts = Fem_Coc_data,min.cells = 1,min.features = 1) #4927 nuclei
+Male_Sal <- CreateSeuratObject(counts = Male_Sal_data,min.cells = 1,min.features = 1) #3911 nuclei 
+Male_Coc <- CreateSeuratObject(counts = Male_Coc_data,min.cells = 1,min.features = 1) #3188 nuclei 
+#15170 total nuclei
 
 #Some of the genes in Rn7 do not contain the Mt prefix. Therefore, we are going to create a vector contain the MT_genes
 #This vector will then be used to create the percent_mito feature
@@ -42,9 +39,9 @@ Fem_Coc <- PercentageFeatureSet(Fem_Coc,
                                 col.name = "percent_mito",
                                 assay    = "RNA")
 Male_Sal <- PercentageFeatureSet(Male_Sal, 
-                                features = MT_genes[which(MT_genes %in% rownames(Male_Sal@assays$RNA@counts))], 
-                                col.name = "percent_mito",
-                                assay    = "RNA")
+                                 features = MT_genes[which(MT_genes %in% rownames(Male_Sal@assays$RNA@counts))], 
+                                 col.name = "percent_mito",
+                                 assay    = "RNA")
 Male_Coc <- PercentageFeatureSet(Male_Coc, 
                                  features = MT_genes[which(MT_genes %in% rownames(Male_Coc@assays$RNA@counts))], 
                                  col.name = "percent_mito",
@@ -57,11 +54,11 @@ VlnPlot(Male_Sal, features = c("nFeature_RNA", "nCount_RNA", "percent_mito"), nc
 VlnPlot(Male_Coc, features = c("nFeature_RNA", "nCount_RNA", "percent_mito"), ncol = 3,pt.size = 0)
 
 #Subset data to have greater than 200 features and less than 5% of reads mapping to mitochondrial genes 
-Fem_Sal  <- subset(x = Fem_Sal, subset  =  nFeature_RNA > 200 & percent_mito < 5) #6373 nuclei 
-Fem_Coc  <- subset(x = Fem_Coc, subset  =  nFeature_RNA > 200 & percent_mito < 5) #7263 nuclei 
-Male_Sal <- subset(x = Male_Sal, subset =  nFeature_RNA > 200 & percent_mito < 5) #6210 nuclei 
-Male_Coc <- subset(x = Male_Coc, subset =  nFeature_RNA > 200 & percent_mito < 5) #6374 nuclei
-#26220 Total Nuclei
+Fem_Sal  <- subset(x = Fem_Sal, subset  =  nFeature_RNA > 200 & percent_mito < 5) #3671 nuclei 
+Fem_Coc  <- subset(x = Fem_Coc, subset  =  nFeature_RNA > 200 & percent_mito < 5) #4895 nuclei 
+Male_Sal <- subset(x = Male_Sal, subset =  nFeature_RNA > 200 & percent_mito < 5) #3905 nuclei 
+Male_Coc <- subset(x = Male_Coc, subset =  nFeature_RNA > 200 & percent_mito < 5) #3184 nuclei
+#15655 Total Nuclei
 
 # #Replot to visualize the QC metrics following the subset 
 VlnPlot(Fem_Sal, features = c("nFeature_RNA", "nCount_RNA", "percent_mito"), ncol = 3,pt.size = 0)
@@ -102,10 +99,10 @@ Fem_Coc$GEM  <- 2
 Male_Sal$GEM <- 3
 Male_Coc$GEM <- 4
 
-Fem_Sal$Dataset  <- 1
-Fem_Coc$Dataset  <- 2
-Male_Sal$Dataset <- 3
-Male_Coc$Dataset <- 4
+Fem_Sal$Dataset  <- "Acute"
+Fem_Coc$Dataset  <- "Acute"
+Male_Sal$Dataset <- "Acute"
+Male_Coc$Dataset <- "Acute"
 
 #Integrate all datasets 
 #Will use 17 dimensions and 0.2 resolution. 
@@ -126,13 +123,8 @@ All_Groups_log <- FindClusters(All_Groups_log, resolution = 0.1)
 #Make the umap
 DimPlot(All_Groups_log,label = TRUE) + NoLegend()
 
-#Save the umap as v1
-library(ggplot2)
-ggsave(plot = DimPlot(All_Groups_log,label = TRUE) + NoLegend(),
-       filename = "MCN_Code/Plots/Repeated_Cocaine_umap_v1.pdf")
-
-
 #Now identify the cell types
+library(ggplot2)
 Dp1 <- DotPlot(object = All_Groups_log,
                assay  = "RNA",
                features =  c("Drd1","Pdyn","Ebf1", #D1-MSN
@@ -150,7 +142,7 @@ Dp1 <- DotPlot(object = All_Groups_log,
   theme(axis.text.x = element_text(angle = 45, hjust =1))
 
 ggsave(plot     = Dp1,
-       filename = "MCN_Code/Plots/DotPlot_DoubletsMaybe_v1.pdf",
+       filename = "/data/project/daylab/2019-JD-0040/MCN_Code/Plots/Acute_Doplot_v1.pdf",
        height   = 12,
        width    = 12)
 
@@ -158,40 +150,37 @@ ggsave(plot     = Dp1,
 #Feature plot
 DefaultAssay(All_Groups_log) <- "RNA"
 Fp1 <- FeaturePlot(object = All_Groups_log,
-            features =  c("Drd1","Pdyn","Ebf1", #D1-MSN
-                          "Drd2","Penk", #D2-MSN
-                          "Drd3","Grm8", #D3/Grm8 MSN
-                          "Elavl2","Kit","Sst", #GABAergic markers
-                          "Slc17a7", #Glut
-                          "Mbp","Opalin", #Oligs
-                          "Aqp4","Gja1", #Astrocytes
-                          "Pdgfra", #Polydendrocytes
-                          "Arhgap15", #Microglia
-                          "Rgs5", #Mural
-                          "Ppp1r1b","Foxp2","Bcl11b","Gad1","Syt1"), #Neuronal markers
-            cols = c("lightgrey","red"))
+                   features =  c("Drd1","Pdyn","Ebf1", #D1-MSN
+                                 "Drd2","Penk", #D2-MSN
+                                 "Drd3","Grm8", #D3/Grm8 MSN
+                                 "Elavl2","Kit","Sst", #GABAergic markers
+                                 "Slc17a7", #Glut
+                                 "Mbp","Opalin", #Oligs
+                                 "Aqp4","Gja1", #Astrocytes
+                                 "Pdgfra", #Polydendrocytes
+                                 "Arhgap15", #Microglia
+                                 "Rgs5", #Mural
+                                 "Ppp1r1b","Foxp2","Bcl11b","Gad1","Syt1"), #Neuronal markers
+                   cols = c("lightgrey","red"))
 
 ggsave(plot     = Fp1,
-       filename = "MCN_Code/Plots/FeaturePlots_v1.pdf",
+       filename = "/data/project/daylab/2019-JD-0040/MCN_Code/Plots/FeaturePlots_Acute_v1.pdf",
        height   = 20,
        width    = 20)
 
-# 0	Olig-1
-# 1	Drd1-MSN
-# 2	Drd2-MSN
-# 3	GABAergic-1
-# 4	Grm8-MSN
-# 5	Astrocytes
-# 6	Polydendrocyte
-# 7	Microglia
-# 8	Glutamatergic
-# 9	Drd2-MSN-2
-# 10	Drd3-MSN
-# 11	Sst-Interneuron
-# 12	Doublets
-# 13	Mural
-# 14	Ebf1-pos
-# 15	GABAergic-2
+#0 Olig-1
+#1 Drd1-MSN
+#2 Drd2-MSN
+#3 GABAergic-1
+#4 Astrocyte
+#5 Grm8-MSN
+#6 Polydendrocyte
+#7 Microglia
+#8 Pvalb-Interneuron
+#9 Drd3-MSN
+#10 Sst-Interneuron
+#11 Glutamatergic
+#12 Mural
 
 #Rename the identities
 All_Groups_log <-  RenameIdents(object = All_Groups_log,
@@ -199,18 +188,15 @@ All_Groups_log <-  RenameIdents(object = All_Groups_log,
                                 "1" = "Drd1-MSN",#
                                 "2" = "Drd2-MSN",#
                                 "3" = "GABAergic-1",#
-                                "4" = "Grm8-MSN",#
-                                "5" = "Astrocyte",#
+                                "4" = "Astrocyte",#
+                                "5" = "Grm8-MSN",#
                                 "6" = "Polydendrocyte",#
                                 "7" = "Microglia",
-                                "8" = "Glutamatergic",#
-                                "9" = "Drd2-MSN-2",#
-                                "10" = "Drd3-MSN",#
-                                "11" = "Sst-Interneuron",#
-                                "12" = "Doublets",#
-                                "13" = "Mural",#
-                                "14" = "Pos-Ebf1",#
-                                "15" = "GABAergic-2")
+                                "8" = "Pvalb-Interneuron",#
+                                "9" = "Drd3-MSN",#
+                                "10" = "Sst-Interneuron",#
+                                "11" = "Glutamatergic",#
+                                "12" = "Mural")
 
 #Create a cell type column
 All_Groups_log$CellType <- Idents(All_Groups_log)
@@ -220,11 +206,12 @@ DimPlot(object = All_Groups_log,reduction = "umap",label = TRUE) +
   NoLegend()
 
 ggsave(plot = DimPlot(All_Groups_log,label = TRUE) + NoLegend(),
-       filename = "MCN_Code/Plots/Repeated_Cocaine_umap_v1_withCellTypeLabels.pdf")
+       filename = "/data/project/daylab/2019-JD-0040/MCN_Code/Plots/Acute_Cocaine_umap_v1_withCellTypeLabels.pdf")
 
+All_Groups_log_Acute <- All_Groups_log
 
 #save the object
-saveRDS(object = All_Groups_log,file = "MCN_Code/Objects/Repeated_Cocaine_v1.RDS")
+saveRDS(object = All_Groups_log_Acute,file = "/data/project/daylab/2019-JD-0040/MCN_Code/Objects/Acute_Cocaine_v1.RDS")
 
 sessionInfo()
 # R version 4.0.2 (2020-06-22)
@@ -277,4 +264,4 @@ sessionInfo()
 # [109] tibble_3.0.4                future.apply_1.6.0          crayon_1.3.4                KernSmooth_2.23-17         
 # [113] spatstat.geom_2.4-0         plotly_4.9.2.1              grid_4.0.2                  data.table_1.13.0          
 # [117] digest_0.6.26               xtable_1.8-4                tidyr_1.1.2                 httpuv_1.5.4               
-# [121] stats4_4.0.2                munsell_0.5.0               viridisLite_0.3.0   
+# [121] stats4_4.0.2                munsell_0.5.0               viridisLite_0.3.0     
