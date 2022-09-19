@@ -310,6 +310,27 @@ res_all_cells <- mapply(FUN = function(x) {
 }, x = dds_all_cells)
 
 
+#Now calculate percent cells expressing
+Idents(NAc_Combo) <- gsub(Idents(NAc_Combo),pattern = "-",replacement = ".")
+SeuratCounts <- t(GetAssayData(object = NAc_Combo,slot = "data",assay = "RNA"))
+for(i in names(res_all_cells)){
+  print(paste("Beginning:",nrow(res_all_cells[[i]])))
+  res_all_cells[[i]] <- as.data.frame(res_all_cells[[i]])
+  #Create a gene name column
+  res_all_cells[[i]]$Gene <- row.names(res_all_cells[[i]])
+  #Pull the genes and calculate percent expressing
+  Genes_PctExp <- as.data.frame(colMeans(SeuratCounts[WhichCells(object = NAc_Combo,idents = i),res_all_cells[[i]]$Gene]>0)*100)
+  #Change the column names
+  Genes_PctExp$Gene <- row.names(Genes_PctExp)
+  colnames(Genes_PctExp)[1] <- "Pct_Expressing"
+  #Add the percent expressing to the dataframe
+  res_all_cells[[i]] <- merge(x = res_all_cells[[i]],
+                              y = Genes_PctExp,
+                              by = "Gene")
+  print(paste("End:",nrow(res_all_cells[[i]])))
+}
+
+
 #Write out the files
 mapply(FUN = function(x, z) {
   
@@ -318,7 +339,6 @@ mapply(FUN = function(x, z) {
   write.csv(x, file=file_name, row.names = TRUE,quote = FALSE)
   
 }, x = res_all_cells, z = gsub("-", ".", names(res_all_cells)))
-
 
 #Save counts
 mapply(FUN = function(x, z) {
@@ -340,7 +360,6 @@ DEGs_DF$CellType  <- names(dds_all_cells)
 
 for(i in names(dds_all_cells)){
   x <- as.data.frame(res_all_cells[[i]])
-  x <- x[-which(is.na(x$padj)),]
   DEGs_DF[i,"No_DEGs"] <- nrow(subset(x,subset=(padj <= 0.05)))
 }
 
@@ -368,9 +387,10 @@ sessionInfo()
 #   [1] parallel  stats4    stats     graphics  grDevices utils     datasets  methods   base     
 # 
 # other attached packages:
-#   [1] pheatmap_1.0.12             RColorBrewer_1.1-2          DESeq2_1.28.1               SummarizedExperiment_1.18.2 DelayedArray_0.14.1         matrixStats_0.57.0          Biobase_2.48.0             
-# [8] GenomicRanges_1.40.0        GenomeInfoDb_1.24.2         IRanges_2.22.2              S4Vectors_0.26.1            BiocGenerics_0.34.0         Matrix.utils_0.9.8          Matrix_1.3-4               
-# [15] ComplexUpset_1.3.3          stringr_1.4.0               ggplot2_3.3.2               SeuratObject_4.0.2          Seurat_4.0.4                dplyr_1.0.2                 Libra_1.0.0                
+#   [1] pheatmap_1.0.12             RColorBrewer_1.1-2          DESeq2_1.28.1               SummarizedExperiment_1.18.2 DelayedArray_0.14.1         matrixStats_0.57.0         
+# [7] Biobase_2.48.0              GenomicRanges_1.40.0        GenomeInfoDb_1.24.2         IRanges_2.22.2              S4Vectors_0.26.1            BiocGenerics_0.34.0        
+# [13] Matrix.utils_0.9.8          Matrix_1.3-4                ComplexUpset_1.3.3          stringr_1.4.0               ggplot2_3.3.2               SeuratObject_4.0.2         
+# [19] Seurat_4.0.4                dplyr_1.0.2                 Libra_1.0.0                
 # 
 # loaded via a namespace (and not attached):
 #   [1] blme_1.0-5             plyr_1.8.6             igraph_1.2.6           lazyeval_0.2.2         TMB_1.8.1              splines_4.0.2          BiocParallel_1.22.0    listenv_0.8.0         
@@ -378,7 +398,7 @@ sessionInfo()
 # [17] ROCR_1.0-11            limma_3.44.3           globals_0.13.1         annotate_1.66.0        tester_0.1.7           spatstat.sparse_2.0-0  colorspace_1.4-1       blob_1.2.1            
 # [25] rappdirs_0.3.1         ggrepel_0.8.2          crayon_1.3.4           RCurl_1.98-1.2         jsonlite_1.7.1         genefilter_1.70.0      lme4_1.1-26            spatstat.data_2.1-0   
 # [33] survival_3.2-7         zoo_1.8-8              glue_1.6.2             polyclip_1.10-0        gtable_0.3.0           zlibbioc_1.34.0        XVector_0.28.0         leiden_0.3.3          
-# [41] future.apply_1.6.0     abind_1.4-5            scales_1.1.1           edgeR_3.30.3           DBI_1.1.0              miniUI_0.1.1.1         Rcpp_1.0.7             viridisLite_0.3.0     
+# [41] future.apply_1.6.0     abind_1.4-5            scales_1.1.1           DBI_1.1.0              edgeR_3.30.3           miniUI_0.1.1.1         Rcpp_1.0.7             viridisLite_0.3.0     
 # [49] xtable_1.8-4           reticulate_1.16        spatstat.core_2.3-0    bit_4.0.4              htmlwidgets_1.5.2      httr_1.4.2             ellipsis_0.3.2         ica_1.0-2             
 # [57] farver_2.0.3           pkgconfig_2.0.3        XML_3.99-0.5           uwot_0.1.10            deldir_1.0-6           locfit_1.5-9.4         labeling_0.3           tidyselect_1.1.0      
 # [65] rlang_1.0.2            reshape2_1.4.4         later_1.1.0.1          AnnotationDbi_1.50.3   pbmcapply_1.5.0        munsell_0.5.0          tools_4.0.2            cli_3.3.0             
@@ -389,4 +409,4 @@ sessionInfo()
 # [105] RcppAnnoy_0.0.19       data.table_1.13.0      cowplot_1.1.0          bitops_1.0-6           irlba_2.3.3            httpuv_1.5.4           patchwork_1.0.1        R6_2.4.1              
 # [113] promises_1.1.1         KernSmooth_2.23-17     gridExtra_2.3          codetools_0.2-16       boot_1.3-25            MASS_7.3-53            withr_2.3.0            sctransform_0.3.2     
 # [121] GenomeInfoDbData_1.2.3 mgcv_1.8-33            grid_4.0.2             rpart_4.1-15           glmmTMB_1.1.3          tidyr_1.1.2            minqa_1.2.4            Rtsne_0.15            
-# [129] numDeriv_2016.8-1.1    shiny_1.5.0 
+# [129] numDeriv_2016.8-1.1    shiny_1.5.0   
