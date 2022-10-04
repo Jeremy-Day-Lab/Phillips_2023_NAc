@@ -11,6 +11,8 @@ library(Matrix.utils)
 library(DESeq2)
 library(RColorBrewer)
 library(pheatmap)
+library(tidyr)
+library(biomaRt)
 
 ###################################################
 ###########Creating New Functions #################
@@ -107,13 +109,13 @@ cluster_total
 NAc_Combo$Sex_Stim <- factor(NAc_Combo$Sex_Stim)
 sample_ids <- purrr::set_names(levels(NAc_Combo@meta.data$Sex_Stim))
 sample_ids
-# Fem_Coc    Fem_Sal   Male_Coc   Male_Sal 
-# "Fem_Coc"  "Fem_Sal" "Male_Coc" "Male_Sal"
+
 
 # Total number of samples 
 sample_total <- length(sample_ids)
 sample_total
-#[1] 4
+# Fem_Coc    Fem_Sal   Male_Coc   Male_Sal 
+# "Fem_Coc"  "Fem_Sal" "Male_Coc" "Male_Sal" 
 
 #Figure out how many cells in each main group
 table(NAc_Combo@meta.data$Sex_Stim)
@@ -129,7 +131,6 @@ count_aggr <- Matrix.utils::aggregate.Matrix(t(NAc_Combo@assays$RNA@counts),
 
 dim(count_aggr)
 # [1]   128 30560
-#128 individual samples from 16 clusters and 8 individual GEM wells
 
 #Turn into a list and split the list into components for each cluster and transform, so rows are genes and columns are samples and make rownames as the sample IDs
 raw_counts_list <- split.data.frame(
@@ -247,68 +248,81 @@ res_all_cells <- mapply(FUN = function(x) {
   
 }, x = dds_all_cells)
 
-#Calculate percent cells expressing each gene
-Idents(NAc_Combo) <- gsub(Idents(NAc_Combo),pattern = "-",replacement = ".")
-SeuratCounts <- t(GetAssayData(object = NAc_Combo,slot = "data",assay = "RNA"))
-
-#Load the biomaRt library
-library(biomaRt)
-#For all genes
-# Specify Ensembl anotation version. Use version which matches gtf file version used in primary pipeline.
+#Load ensembl library
 ensembl <- useMart("ensembl",
-                   dataset = "rnorvegicus_gene_ensembl") #Should pull the latest ensembl (This analysis was completed on 09/21/22)
+                   dataset = "rnorvegicus_gene_ensembl") #Should pull the latest ensembl (This analysis was completed on 10/4/22)
 
-#Start the loop
+#Finding chromosome information 
 for(i in names(res_all_cells)){
-  print(paste("Beginning:",nrow(res_all_cells[[i]])))
-  res_all_cells[[i]] <- as.data.frame(res_all_cells[[i]])
-  #Create a gene name column
-  res_all_cells[[i]]$Gene <- row.names(res_all_cells[[i]])
-  #Pull the genes and calculate percent expressing
-  Genes_PctExp_Male <- as.data.frame(colMeans(SeuratCounts[rownames(NAc_Combo@meta.data[which(NAc_Combo@meta.data$CellType == gsub(i,pattern = "[.]",replacement = "-") & NAc_Combo@meta.data$Sex == "Male"),]),res_all_cells[[i]]$Gene]>0)*100)
-  Genes_PctExp_Fem  <- as.data.frame(colMeans(SeuratCounts[rownames(NAc_Combo@meta.data[which(NAc_Combo@meta.data$CellType == gsub(i,pattern = "[.]",replacement = "-") & NAc_Combo@meta.data$Sex == "Female"),]),res_all_cells[[i]]$Gene]>0)*100)
-  #Change the column names
-  Genes_PctExp_Male$Gene <- row.names(Genes_PctExp_Male)
-  Genes_PctExp_Fem$Gene  <- row.names(Genes_PctExp_Fem)
-  colnames(Genes_PctExp_Male)[1] <- "Pct_Expressing_Male"
-  colnames(Genes_PctExp_Fem)[1] <- "Pct_Expressing_Female"
-  #Merge the twp dataframes
-  Genes_PctExp <- merge(x  = Genes_PctExp_Male,
-                        y  = Genes_PctExp_Fem,
-                        by = "Gene")
-  #Add the percent expressing to the dataframe
-  res_all_cells[[i]] <- merge(x = res_all_cells[[i]],
-                              y = Genes_PctExp,
-                              by = "Gene")
-  #Write out the file with no chromosome information. Reason to do this is because with biomart I have to search by external_gene_name and not ensembl ID, so some of the values are lost
-  write.table(x         = res_all_cells[[i]],
-              file      = paste0("2019-JD-0040/MCN_Code/Tables/DESeq2_Sex/Stim_as_covariate/NoChrInfo/DESeq2_",i,"_NoChrInfo.txt"),
-              sep       = "\t",
-              quote     = FALSE,
+  #make data frame for individual cell type
+  df <- as.data.frame(res_all_cells[[i]])
+  df$Gene <- row.names(df)
+  print(paste("Number of DEGs:",nrow(subset(df,subset=(padj<=0.05)))))
+  #add chromosome info for genes with external IDs
+  genes1 <- getBM(attributes = c("external_gene_name",
+                                 "chromosome_name"),
+                  filters = "external_gene_name", 
+                  values  = df[-grep("ENSRN",df$Gene),"Gene"],
+                  mart    = ensembl)
+  #add chromosome info for genes with only ensembl IDs
+  genes2 <- getBM(attributes = c("ensembl_gene_id",
+                                 "chromosome_name"),
+                  filters = "ensembl_gene_id", 
+                  values  = df[grep("ENSRN",df$Gene),"Gene"],
+                  mart    = ensembl)
+  
+  #rename genes1 and genes2 colnames so they can be merged
+  colnames(genes1) <- c('Gene_Name','chromosome_name')
+  colnames(genes2) <- c('Gene_Name','chromosome_name')
+  genes <- rbind(genes1, genes2)
+  
+  #merge data frame with res_all_cells
+  Withchrinfo <- merge(x = df,
+                       y = genes, 
+                       by.x = 'Gene',
+                       by.y = 'Gene_Name')
+  print(paste("Number of DEGs:",nrow(subset(Withchrinfo,subset=(padj<=0.05)))))
+  #write files with chromosome information
+  write.table(x = Withchrinfo,
+              file = paste0("2019-JD-0040/MCN_Code/Tables/DESeq2_Sex/Stim_as_covariate/DEseq2_Sex_",i,"_WithChrInfo.txt"),
+              sep = "\t",
+              quote = FALSE,
               row.names = TRUE,
               col.names = TRUE)
-  #Now get the chromosome informatiom
-  #Add information to resOrdered
-  #listAttributes(ensembl) #Tells you all of the available variables for the dataset 
-  genes <- getBM(attributes = c("external_gene_name",
-                                "chromosome_name"),
-                 filters = "external_gene_name", 
-                 values  = res_all_cells[[i]]$Gene,
-                 mart    = ensembl)
-  Withchrinfo <- merge(x  = res_all_cells[[i]],
-                       y  = genes,
-                       by.x = "Gene",
-                       by.y = "external_gene_name")
-  #Now write out the files with chromsome information 
-  write.table(x         = Withchrinfo,
-              file      = paste0("2019-JD-0040/MCN_Code/Tables/DESeq2_Sex/Stim_as_covariate/WithChrInfo/DESeq2_",i,"_WithChrInfo.txt"),
-              sep       = "\t",
-              quote     = FALSE,
-              row.names = TRUE,
-              col.names = TRUE)
-  print(paste("End:",nrow(res_all_cells[[i]])))
 }
-
+#Not losing any genes when adding chromosome information. 
+# [1] "Number of DEGs: 9"
+# [1] "Number of DEGs: 9"
+# [1] "Number of DEGs: 2"
+# [1] "Number of DEGs: 2"
+# [1] "Number of DEGs: 31"
+# [1] "Number of DEGs: 31"
+# [1] "Number of DEGs: 41"
+# [1] "Number of DEGs: 41"
+# [1] "Number of DEGs: 23"
+# [1] "Number of DEGs: 23"
+# [1] "Number of DEGs: 6"
+# [1] "Number of DEGs: 6"
+# [1] "Number of DEGs: 7"
+# [1] "Number of DEGs: 7"
+# [1] "Number of DEGs: 12"
+# [1] "Number of DEGs: 12"
+# [1] "Number of DEGs: 8"
+# [1] "Number of DEGs: 8"
+# [1] "Number of DEGs: 32"
+# [1] "Number of DEGs: 32"
+# [1] "Number of DEGs: 6"
+# [1] "Number of DEGs: 6"
+# [1] "Number of DEGs: 0"
+# [1] "Number of DEGs: 0"
+# [1] "Number of DEGs: 95"
+# [1] "Number of DEGs: 95"
+# [1] "Number of DEGs: 28"
+# [1] "Number of DEGs: 28"
+# [1] "Number of DEGs: 8"
+# [1] "Number of DEGs: 8"
+# [1] "Number of DEGs: 7"
+# [1] "Number of DEGs: 7"
 
 #Save counts
 mapply(FUN = function(x, z) {
@@ -329,7 +343,6 @@ DEGs_DF$CellType  <- names(dds_all_cells)
 
 for(i in names(dds_all_cells)){
   x <- as.data.frame(res_all_cells[[i]])
-  x <- x[-which(is.na(x$padj)),]
   DEGs_DF[i,"No_DEGs"] <- nrow(subset(x,subset=(padj <= 0.05)))
 }
 
@@ -350,42 +363,36 @@ sessionInfo()
 # LAPACK: /usr/lib/libopenblasp-r0.2.18.so
 # 
 # locale:
-#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8        LC_COLLATE=en_US.UTF-8     LC_MONETARY=en_US.UTF-8   
-# [6] LC_MESSAGES=en_US.UTF-8    LC_PAPER=en_US.UTF-8       LC_NAME=C                  LC_ADDRESS=C               LC_TELEPHONE=C            
-# [11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8        LC_COLLATE=en_US.UTF-8     LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8    LC_PAPER=en_US.UTF-8      
+# [8] LC_NAME=C                  LC_ADDRESS=C               LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
 # 
 # attached base packages:
 #   [1] parallel  stats4    stats     graphics  grDevices utils     datasets  methods   base     
 # 
 # other attached packages:
-#   [1] biomaRt_2.44.4              ggrepel_0.8.2               pheatmap_1.0.12             RColorBrewer_1.1-2          DESeq2_1.28.1              
-# [6] SummarizedExperiment_1.18.2 DelayedArray_0.14.1         matrixStats_0.57.0          Biobase_2.48.0              GenomicRanges_1.40.0       
-# [11] GenomeInfoDb_1.24.2         IRanges_2.22.2              S4Vectors_0.26.1            BiocGenerics_0.34.0         Matrix.utils_0.9.8         
-# [16] Matrix_1.3-4                ComplexUpset_1.3.3          stringr_1.4.0               dplyr_1.0.2                 Libra_1.0.0                
-# [21] ggplot2_3.3.2               SeuratObject_4.0.2          Seurat_4.0.4               
+#   [1] biomaRt_2.44.4              tidyr_1.1.2                 pheatmap_1.0.12             RColorBrewer_1.1-2          DESeq2_1.28.1               SummarizedExperiment_1.18.2 DelayedArray_0.14.1        
+# [8] matrixStats_0.57.0          Biobase_2.48.0              GenomicRanges_1.40.0        GenomeInfoDb_1.24.2         IRanges_2.22.2              S4Vectors_0.26.1            BiocGenerics_0.34.0        
+# [15] Matrix.utils_0.9.8          Matrix_1.3-4                ComplexUpset_1.3.3          stringr_1.4.0               ggplot2_3.3.2               SeuratObject_4.0.2          Seurat_4.0.4               
+# [22] dplyr_1.0.2                 Libra_1.0.0                
 # 
 # loaded via a namespace (and not attached):
-#   [1] blme_1.0-5             BiocFileCache_1.12.1   plyr_1.8.6             igraph_1.2.6           lazyeval_0.2.2         TMB_1.8.1             
-# [7] splines_4.0.2          BiocParallel_1.22.0    listenv_0.8.0          scattermore_0.7        digest_0.6.26          htmltools_0.5.2       
-# [13] lmerTest_3.1-3         magrittr_1.5           memoise_1.1.0          tensor_1.5             cluster_2.1.0          ROCR_1.0-11           
-# [19] limma_3.44.3           globals_0.13.1         annotate_1.66.0        tester_0.1.7           askpass_1.1            spatstat.sparse_2.0-0 
-# [25] prettyunits_1.1.1      colorspace_1.4-1       blob_1.2.1             rappdirs_0.3.1         crayon_1.3.4           RCurl_1.98-1.2        
-# [31] jsonlite_1.7.1         genefilter_1.70.0      lme4_1.1-26            spatstat.data_2.1-0    survival_3.2-7         zoo_1.8-8             
-# [37] glue_1.6.2             polyclip_1.10-0        gtable_0.3.0           zlibbioc_1.34.0        XVector_0.28.0         leiden_0.3.3          
-# [43] future.apply_1.6.0     abind_1.4-5            scales_1.1.1           DBI_1.1.0              edgeR_3.30.3           miniUI_0.1.1.1        
-# [49] Rcpp_1.0.7             progress_1.2.2         viridisLite_0.3.0      xtable_1.8-4           reticulate_1.16        spatstat.core_2.3-0   
-# [55] bit_4.0.4              htmlwidgets_1.5.2      httr_1.4.2             ellipsis_0.3.2         ica_1.0-2              farver_2.0.3          
-# [61] pkgconfig_2.0.3        XML_3.99-0.5           dbplyr_1.4.4           uwot_0.1.10            deldir_1.0-6           locfit_1.5-9.4        
-# [67] labeling_0.3           tidyselect_1.1.0       rlang_1.0.2            reshape2_1.4.4         later_1.1.0.1          AnnotationDbi_1.50.3  
-# [73] pbmcapply_1.5.0        munsell_0.5.0          tools_4.0.2            cli_3.3.0              generics_0.0.2         RSQLite_2.2.1         
-# [79] ggridges_0.5.2         fastmap_1.1.0          yaml_2.2.1             goftest_1.2-2          bit64_4.0.5            fitdistrplus_1.1-1    
-# [85] purrr_0.3.4            RANN_2.6.1             pbapply_1.4-3          future_1.19.1          nlme_3.1-149           mime_0.9              
-# [91] grr_0.9.5              xml2_1.3.2             compiler_4.0.2         rstudioapi_0.11        curl_4.3               plotly_4.9.2.1        
-# [97] png_0.1-7              spatstat.utils_2.2-0   tibble_3.0.4           statmod_1.4.35         geneplotter_1.66.0     stringi_1.7.6         
-# [103] forcats_0.5.0          lattice_0.20-41        nloptr_1.2.2.2         vctrs_0.4.1            pillar_1.4.6           lifecycle_0.2.0       
-# [109] spatstat.geom_2.4-0    lmtest_0.9-38          RcppAnnoy_0.0.19       data.table_1.13.0      cowplot_1.1.0          bitops_1.0-6          
-# [115] irlba_2.3.3            httpuv_1.5.4           patchwork_1.0.1        R6_2.4.1               promises_1.1.1         KernSmooth_2.23-17    
-# [121] gridExtra_2.3          codetools_0.2-16       assertthat_0.2.1       boot_1.3-25            MASS_7.3-53            openssl_1.4.3         
-# [127] withr_2.3.0            sctransform_0.3.2      GenomeInfoDbData_1.2.3 hms_0.5.3              mgcv_1.8-33            grid_4.0.2            
-# [133] rpart_4.1-15           glmmTMB_1.1.3          tidyr_1.1.2            minqa_1.2.4            Rtsne_0.15             numDeriv_2016.8-1.1   
-# [139] shiny_1.5.0           
+#   [1] blme_1.0-5             BiocFileCache_1.12.1   plyr_1.8.6             igraph_1.2.6           lazyeval_0.2.2         TMB_1.8.1              splines_4.0.2          BiocParallel_1.22.0   
+# [9] listenv_0.8.0          scattermore_0.7        digest_0.6.26          htmltools_0.5.2        lmerTest_3.1-3         magrittr_1.5           memoise_1.1.0          tensor_1.5            
+# [17] cluster_2.1.0          ROCR_1.0-11            limma_3.44.3           globals_0.13.1         annotate_1.66.0        tester_0.1.7           askpass_1.1            spatstat.sparse_2.0-0 
+# [25] prettyunits_1.1.1      colorspace_1.4-1       blob_1.2.1             rappdirs_0.3.1         ggrepel_0.8.2          crayon_1.3.4           RCurl_1.98-1.2         jsonlite_1.7.1        
+# [33] genefilter_1.70.0      lme4_1.1-26            spatstat.data_2.1-0    survival_3.2-7         zoo_1.8-8              glue_1.6.2             polyclip_1.10-0        gtable_0.3.0          
+# [41] zlibbioc_1.34.0        XVector_0.28.0         leiden_0.3.3           future.apply_1.6.0     abind_1.4-5            scales_1.1.1           DBI_1.1.0              edgeR_3.30.3          
+# [49] miniUI_0.1.1.1         Rcpp_1.0.7             progress_1.2.2         viridisLite_0.3.0      xtable_1.8-4           reticulate_1.16        spatstat.core_2.3-0    bit_4.0.4             
+# [57] htmlwidgets_1.5.2      httr_1.4.2             ellipsis_0.3.2         ica_1.0-2              farver_2.0.3           pkgconfig_2.0.3        XML_3.99-0.5           dbplyr_1.4.4          
+# [65] uwot_0.1.10            deldir_1.0-6           locfit_1.5-9.4         labeling_0.3           tidyselect_1.1.0       rlang_1.0.2            reshape2_1.4.4         later_1.1.0.1         
+# [73] AnnotationDbi_1.50.3   pbmcapply_1.5.0        munsell_0.5.0          tools_4.0.2            cli_3.3.0              generics_0.0.2         RSQLite_2.2.1          ggridges_0.5.2        
+# [81] fastmap_1.1.0          yaml_2.2.1             goftest_1.2-2          bit64_4.0.5            fitdistrplus_1.1-1     purrr_0.3.4            RANN_2.6.1             pbapply_1.4-3         
+# [89] future_1.19.1          nlme_3.1-149           mime_0.9               grr_0.9.5              xml2_1.3.2             compiler_4.0.2         rstudioapi_0.11        curl_4.3              
+# [97] plotly_4.9.2.1         png_0.1-7              spatstat.utils_2.2-0   tibble_3.0.4           statmod_1.4.35         geneplotter_1.66.0     stringi_1.7.6          forcats_0.5.0         
+# [105] lattice_0.20-41        nloptr_1.2.2.2         vctrs_0.4.1            pillar_1.4.6           lifecycle_0.2.0        spatstat.geom_2.4-0    lmtest_0.9-38          RcppAnnoy_0.0.19      
+# [113] data.table_1.13.0      cowplot_1.1.0          bitops_1.0-6           irlba_2.3.3            httpuv_1.5.4           patchwork_1.0.1        R6_2.4.1               promises_1.1.1        
+# [121] KernSmooth_2.23-17     gridExtra_2.3          codetools_0.2-16       assertthat_0.2.1       boot_1.3-25            MASS_7.3-53            openssl_1.4.3          withr_2.3.0           
+# [129] sctransform_0.3.2      GenomeInfoDbData_1.2.3 hms_0.5.3              mgcv_1.8-33            grid_4.0.2             rpart_4.1-15           glmmTMB_1.1.3          minqa_1.2.4           
+# [137] Rtsne_0.15             numDeriv_2016.8-1.1    shiny_1.5.0           
+# 
+# 
